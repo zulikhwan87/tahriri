@@ -304,7 +304,8 @@ function App() {
    ========================================================================= */
 function TabDashboard({ appData }) {
   const { students, records, config } = appData;
-  const rekodBulanIni = records[config.currentMonth] || {};
+  const [bulanSemasa, setBulanSemasa] = useState(config.currentMonth || getMonthKey());
+  const rekodBulanIni = records[bulanSemasa] || {};
   
   const total = students.length;
   let selesai = 0, sumPencapaian = 0, diisi = 0;
@@ -341,11 +342,17 @@ function TabDashboard({ appData }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-2 mb-2">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-2">
         <div>
           <h2 className="text-xl font-extrabold text-gray-800">Prestasi Keseluruhan</h2>
-          <p className="text-sm font-medium text-gray-500">Statistik bagi bulan <strong className="text-gray-700">{formatBulan(config.currentMonth)}</strong></p>
+          <p className="text-sm font-medium text-gray-500">Statistik bagi bulan terpilih</p>
         </div>
+        <input 
+          type="month" 
+          value={bulanSemasa} 
+          onChange={e => setBulanSemasa(e.target.value)} 
+          className="bg-white border border-gray-200 text-gray-800 text-sm font-bold rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm w-full md:w-auto"
+        />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
@@ -390,6 +397,7 @@ function TabEntry({ appData, updateData }) {
   const [filterGuru, setFilterGuru] = useState("");
   const [filterKelas, setFilterKelas] = useState("");
   const [carian, setCarian] = useState("");
+  const [bulanSemasa, setBulanSemasa] = useState(config.currentMonth || getMonthKey());
 
   const guruList = useMemo(() => Array.from(new Set(students.map(s => s.guru).filter(Boolean))).sort(), [students]);
 
@@ -421,25 +429,32 @@ function TabEntry({ appData, updateData }) {
     updateData(prev => {
       const ms = val === "" ? undefined : parseInt(val, 10);
       const nextRecords = { ...prev.records };
-      const rekodBulan = { ...(nextRecords[config.currentMonth] || {}) };
+      const rekodBulan = { ...(nextRecords[bulanSemasa] || {}) };
       
       if (ms === undefined) delete rekodBulan[id];
       else rekodBulan[id] = Math.max(0, ms);
       
-      nextRecords[config.currentMonth] = rekodBulan;
+      nextRecords[bulanSemasa] = rekodBulan;
       return { ...prev, records: nextRecords };
     });
   };
 
   if (students.length === 0) return <KadKosong pesan="Tiada pelajar. Sila daftar pelajar." icon={Users} />;
 
-  const rekodBulanIni = records[config.currentMonth] || {};
+  const rekodBulanIni = records[bulanSemasa] || {};
   const siapDiisi = pelajarDitapis.filter(s => rekodBulanIni[s.id] !== undefined).length;
 
   return (
     <div className="space-y-4">
       {/* Kawalan Carian, Guru & Kelas */}
       <Card padding={false} className="p-3 bg-white sticky top-20 md:top-0 z-30 flex flex-col md:flex-row gap-3 shadow-sm">
+        <input 
+          type="month" 
+          value={bulanSemasa} 
+          onChange={e => setBulanSemasa(e.target.value)} 
+          className="w-full md:w-40 bg-blue-50 border border-blue-200 text-blue-800 text-sm font-bold rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary outline-none cursor-pointer" 
+          title="Pilih Bulan Kemasukan"
+        />
         <select value={filterGuru} onChange={e => setFilterGuru(e.target.value)} className="w-full md:w-48 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-bold rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer">
           <option value="">Semua Guru</option>
           {guruList.map(g => <option key={g} value={g}>{g}</option>)}
@@ -660,7 +675,8 @@ function TabManage({ appData, updateData }) {
    ========================================================================= */
 function TabReport({ appData }) {
   const { students, records, config } = appData;
-  const rekodBulanIni = records[config.currentMonth] || {};
+  const [bulanSemasa, setBulanSemasa] = useState(config.currentMonth || getMonthKey());
+  const rekodBulanIni = records[bulanSemasa] || {};
 
   const handleCetak = () => window.print();
 
@@ -679,7 +695,7 @@ function TabReport({ appData }) {
     
     const ws = XLSX.utils.aoa_to_sheet([...headers, ...data]);
     XLSX.utils.book_append_sheet(wb, ws, "Laporan");
-    XLSX.writeFile(wb, `Laporan_Tahriri_${config.currentMonth}.xlsx`);
+    XLSX.writeFile(wb, `Laporan_Tahriri_${bulanSemasa}.xlsx`);
   };
 
   // Ringkasan Tingkatan (untuk jadual cetakan)
@@ -700,12 +716,18 @@ function TabReport({ appData }) {
 
   return (
     <div className="space-y-4">
-      <div className="no-print flex justify-between items-center mb-6">
+      <div className="no-print flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-gray-800">Jana Laporan</h2>
-          <p className="text-sm font-medium text-gray-500">Laporan rasmi {formatBulan(config.currentMonth)}</p>
+          <p className="text-sm font-medium text-gray-500">Laporan rasmi bulanan</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <input 
+            type="month" 
+            value={bulanSemasa} 
+            onChange={e => setBulanSemasa(e.target.value)} 
+            className="bg-white border border-gray-200 text-gray-800 text-sm font-bold rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm"
+          />
           <Button variant="outline" icon={Download} onClick={handleExportExcel} className="hidden md:flex">Excel</Button>
           <Button icon={Printer} onClick={handleCetak}>Cetak PDF</Button>
         </div>
@@ -714,7 +736,7 @@ function TabReport({ appData }) {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 print-only:shadow-none print-only:border-0 print-only:p-0">
         <div className="text-center mb-8 border-b-2 border-gray-800 pb-6">
           <h1 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Laporan Penulisan Tahriri Al-Quran</h1>
-          <p className="text-gray-600 font-semibold mt-1">Bulan Laporan: {formatBulan(config.currentMonth)}</p>
+          <p className="text-gray-600 font-semibold mt-1">Bulan Laporan: {formatBulan(bulanSemasa)}</p>
         </div>
 
         <div className="grid grid-cols-4 gap-4 mb-8">
