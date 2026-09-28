@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Sistem Rekod Tahriri Al-Quran</title>
+  
+  <!-- Tailwind CSS untuk UI/UX Moden & Mobile-First -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Konfigurasi Tailwind Tema Islamik (Emerald) -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { primary: '#059669', primaryDark: '#047857', primarySoft: '#d1fae5' },
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
+    /* Scrollbar minimalis */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    
+    /* Animasi Loading */
+    .spinner { border: 3px solid rgba(5, 150, 105, 0.2); border-top-color: #059669; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Cetakan PDF */
+    @media print {
+      body { background-color: white !important; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      .print-break-avoid { page-break-inside: avoid; }
+      @page { margin: 1cm; size: A4 portrait; }
+    }
+  </style>
+
+  <!-- Import Pustaka (React, Recharts, Lucide, XLSX) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react/": "https://esm.sh/react@18.3.1/",
+      "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
+      "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+      "lucide-react": "https://esm.sh/lucide-react@0.400.0?external=react",
+      "xlsx": "https://esm.sh/xlsx@0.18.5"
+    }
+  }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body class="font-sans text-gray-800">
+  <div id="root">
+    <div class="min-h-screen flex items-center justify-center flex-col gap-4 text-gray-500">
+      <div class="spinner w-10 h-10 border-4"></div>
+      <p class="font-medium animate-pulse">Memuatkan sistem...</p>
+    </div>
+  </div>
+
+  <script type="text/babel" data-type="module" data-presets="react">
+/**
+ * =========================================================================
+ * BACKEND GOOGLE SHEETS (SILA UPDATE DI APPS SCRIPT JIKA BELUM)
+ * =========================================================================
+ * Untuk mengelakkan data hilang, pastikan fungsi writeAll_ di Apps Script
+ * menerima data sebagai satu objek penuh dan menulisnya sekaligus.
+ * Kod Apps Script asal anda masih berfungsi, tetapi pastikan anda TAMPAL
+ * URL Apps Script anda di bawah ini:
+ */
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxFIei5kbb4BfsMohKuRraDRrJ21pdBnEme7x3rW4yQLrSKsby0AyWGDSAXhjWYtl0/exec"; // <-- TAMPAL URL APPS SCRIPT ANDA DI SINI
+
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { createRoot } from "react-dom/client";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, Cell } from "recharts";
+import { LayoutDashboard, PenLine, FileBarChart2, Users, CheckCircle2, Cloud, CloudOff, CloudUpload, RefreshCcw, Search, Plus, Trash2, Download, Printer, BookOpen, AlertCircle, ChevronRight, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
+
+// --- KONFIGURASI LOGIK HAFAZAN ---
+const TINGKATAN = [1, 2, 3, 4, 5];
+const TARGET = { 1: 41, 2: 81, 3: 121, 4: 161, 5: 201 };
+const FLOOR = { 1: 0, 2: 41, 3: 81, 4: 121, 5: 161 };
+const MONTHS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+
+const getMonthKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const formatBulan = (key) => { const [y, m] = key.split('-'); return `${MONTHS[parseInt(m)-1]} ${y}`; };
+
+function kiraStatusPelajar(tingkatan, mukasurat) {
+  const t = Number(tingkatan) || 1;
+  const ms = Math.max(0, Number(mukasurat) || 0);
+  const mula = FLOOR[t], sasaran = TARGET[t], beza = sasaran - mula;
+  const pencapaian = beza > 0 ? Math.min(100, Math.max(0, ((Math.min(ms, sasaran) - mula) / beza) * 100)) : 0;
+  const baki = Math.max(0, sasaran - ms);
+  return { ms, pencapaian: Math.round(pencapaian), baki, selesai: ms >= sasaran };
+}
+
+// --- KOMPONEN UI ASAS ---
+const Card = ({ children, className = "", padding = true }) => (
+  <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${padding ? 'p-4 md:p-6' : ''} ${className}`}>
+    {children}
+  </div>
+);
+
+const Button = ({ children, onClick, variant = 'primary', icon: Icon, disabled, className = "" }) => {
+  const variants = {
+    primary: "bg-primary hover:bg-primaryDark text-white shadow-md shadow-primary/20",
+    outline: "border-2 border-gray-200 hover:border-primary text-gray-700 hover:text-primary bg-white",
+    ghost: "text-gray-500 hover:text-gray-900 hover:bg-gray-100",
+    danger: "bg-red-50 hover:bg-red-100 text-red-600"
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${variants[variant]} ${className}`}>
+      {Icon && <Icon size={18} strokeWidth={2.5} />}
+      {children}
+    </button>
+  );
+};
+
+// --- APLIKASI UTAMA ---
+function App() {
+  const [activeTab, setActiveTab] = useState("dash");
+  
+  // STATE ATOMIK (Semua data dalam satu state untuk elak data tidak segerak)
+  const [appData, setAppData] = useState({
+    students: [],
+    records: {},
+    config: { year: new Date().getFullYear(), currentMonth: getMonthKey() }
+  });
+
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle, loading, error, unsaved, saving, saved
+  const [lastSync, setLastSync] = useState(null);
+
+  // Fungsi fetch dari Cloud
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setSyncStatus("loading");
+    if (!SHEET_API_URL || !SHEET_API_URL.startsWith("http")) {
+      // Guna LocalStorage jika tiada API
+      try {
+        const local = localStorage.getItem("tahriri_data");
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (parsed && parsed.students) setAppData(parsed);
+        }
+      } catch (err) {
+        console.error("Local storage error:", err);
+      }
+      setSyncStatus("saved");
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${SHEET_API_URL}?_=${Date.now()}`);
+      if (!res.ok) throw new Error("Gagal hubungi server");
+      const data = await res.json();
+      setAppData({
+        students: data.students || [],
+        records: data.records || {},
+        config: data.config || { year: new Date().getFullYear(), currentMonth: getMonthKey() }
+      });
+      setSyncStatus("saved");
+      setLastSync(new Date());
+    } catch (err) {
+      console.error(err);
+      if (!silent) setSyncStatus("error");
+    }
+  }, []);
+
+  // Fungsi save ke Cloud (dengan debounce terbina di useEffect)
+  const saveData = async (dataToSave) => {
+    if (!SHEET_API_URL || !SHEET_API_URL.startsWith("http")) {
+      localStorage.setItem("tahriri_data", JSON.stringify(dataToSave));
+      setSyncStatus("saved");
+      return;
+    }
+
+    setSyncStatus("saving");
+    try {
+      const res = await fetch(SHEET_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // Elak preflight CORS
+        body: JSON.stringify(dataToSave)
+      });
+      if (!res.ok) throw new Error("Gagal simpan");
+      setSyncStatus("saved");
+      setLastSync(new Date());
+    } catch (err) {
+      console.error(err);
+      setSyncStatus("error");
+    }
+  };
+
+  // Muat data masa mula
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-refresh jika user kembali ke tab ini (elak timpa data orang lain)
+  useEffect(() => {
+    const onFocus = () => { if (syncStatus === "saved" || syncStatus === "idle") fetchData(true); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [fetchData, syncStatus]);
+
+  // Debounce saving: Jika ada perubahan ('unsaved'), tunggu 1.5 saat sebelum hantar
+  useEffect(() => {
+    if (syncStatus === "unsaved") {
+      const timer = setTimeout(() => saveData(appData), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [appData, syncStatus]);
+
+  // Wrapper untuk kemas kini data yang akan set status ke 'unsaved'
+  const updateData = (newDataModifier) => {
+    setAppData(prev => {
+      const next = typeof newDataModifier === 'function' ? newDataModifier(prev) : newDataModifier;
+      setSyncStatus("unsaved");
+      return next;
+    });
+  };
+
+  // Paparan Loading Awal
+  if (syncStatus === "loading" && appData.students.length === 0) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="spinner border-4"></div></div>;
+  }
+
+  const TABS = [
+    { id: "dash", label: "Utama", icon: LayoutDashboard },
+    { id: "entry", label: "Rekod", icon: PenLine },
+    { id: "manage", label: "Pelajar", icon: Users },
+    { id: "report", label: "Laporan", icon: FileBarChart2 },
+  ];
+
+  return (
+    <div className="min-h-screen pb-24 md:pb-10 max-w-5xl mx-auto md:p-6">
+      {/* HEADER KHAS (Tunjuk status sinkronisasi) */}
+      <header className="bg-white md:rounded-2xl shadow-sm border-b md:border border-gray-100 p-4 sticky top-0 z-40 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md">
+            <BookOpen size={20} />
+          </div>
+          <div>
+            <h1 className="font-bold text-gray-800 leading-tight">Rekod Tahriri</h1>
+            <p className="text-xs text-gray-500 font-medium">Al-Quran (Sistem Web)</p>
+          </div>
+        </div>
+        
+        {/* Status Cloud */}
+        <div className="flex items-center gap-2">
+          {syncStatus === "saving" && <span className="flex items-center gap-1 text-xs font-bold text-amber-500 bg-amber-50 px-2 py-1 rounded-full"><RefreshCcw size={12} className="animate-spin" /> Menyimpan</span>}
+          {syncStatus === "saved" && <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full"><Cloud size={14} /> Tersimpan</span>}
+          {syncStatus === "unsaved" && <span className="flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-full"><CloudUpload size={14} /> Tertunda</span>}
+          {syncStatus === "error" && <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full"><CloudOff size={14} /> Ralat</span>}
+          <button onClick={() => fetchData(false)} title="Muat Semula Data" className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-600 ml-1">
+            <RefreshCcw size={16} />
+          </button>
+        </div>
+      </header>
+
+      {/* KANDUNGAN TAB */}
+      <main className="px-4 md:px-0">
+        {activeTab === "dash" && <TabDashboard appData={appData} />}
+        {activeTab === "entry" && <TabEntry appData={appData} updateData={updateData} />}
+        {activeTab === "manage" && <TabManage appData={appData} updateData={updateData} />}
+        {activeTab === "report" && <TabReport appData={appData} />}
+      </main>
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-2 pb-safe z-50 shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]">
+        {TABS.map(t => {
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex flex-col items-center gap-1 p-2 w-full rounded-xl transition-colors ${activeTab === t.id ? 'text-primary' : 'text-gray-400 hover:text-gray-600'}`}>
+              <Icon size={22} strokeWidth={activeTab === t.id ? 2.5 : 2} />
+              <span className="text-[10px] font-bold">{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* DESKTOP NAV (Terapung di sisi atas) */}
+      <nav className="hidden md:flex justify-center gap-2 mb-6">
+        {TABS.map(t => {
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === t.id ? 'bg-gray-900 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300 hover:text-gray-800'}`}>
+              <Icon size={18} /> {t.label}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
+
+/* =========================================================================
+   TAB 1: DASHBOARD UTAMA
+   ========================================================================= */
+function TabDashboard({ appData }) {
+  const { students, records, config } = appData;
+  const rekodBulanIni = records[config.currentMonth] || {};
+  
+  const total = students.length;
+  let selesai = 0, sumPencapaian = 0, diisi = 0;
+
+  students.forEach(s => {
+    const ms = rekodBulanIni[s.id];
+    if (ms !== undefined) {
+      diisi++;
+      const st = kiraStatusPelajar(s.tingkatan, ms);
+      if (st.selesai) selesai++;
+      sumPencapaian += st.pencapaian;
+    }
+  });
+
+  const peratusTulis = diisi ? Math.round(sumPencapaian / diisi) : 0;
+  
+  // Data Carta (Pencapaian per Tingkatan)
+  const chartData = TINGKATAN.map(t => {
+    const list = students.filter(s => s.tingkatan === t);
+    let stSelesai = 0, sumP = 0, c = 0;
+    list.forEach(s => {
+      const ms = rekodBulanIni[s.id];
+      if (ms !== undefined) {
+        c++;
+        const st = kiraStatusPelajar(t, ms);
+        if (st.selesai) stSelesai++;
+        sumP += st.pencapaian;
+      }
+    });
+    return { name: `Ting ${t}`, peratus: c ? Math.round(sumP/c) : 0, selesai: stSelesai, total: list.length };
+  });
+
+  if (total === 0) return <KadKosong pesan="Sila tambah data pelajar dahulu di tab 'Pelajar'." icon={Users} />;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-2 mb-2">
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-800">Prestasi Keseluruhan</h2>
+          <p className="text-sm font-medium text-gray-500">Statistik bagi bulan <strong className="text-gray-700">{formatBulan(config.currentMonth)}</strong></p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <StatCard title="Jumlah Pelajar" value={total} sub="Orang berdaftar" color="bg-blue-50 text-blue-600" />
+        <StatCard title="Rekod Diisi" value={`${diisi}/${total}`} sub="Bulan semasa" color="bg-purple-50 text-purple-600" />
+        <StatCard title="Selesai (YTD)" value={selesai} sub="Pelajar capai sasaran" color="bg-emerald-50 text-emerald-600" />
+        <StatCard title="Pencapaian" value={`${peratusTulis}%`} sub="Purata keseluruhan" color="bg-amber-50 text-amber-600" />
+      </div>
+
+      <Card>
+        <h3 className="font-bold text-gray-800 mb-4">Pencapaian Mengikut Tingkatan</h3>
+        <div className="h-64 w-full">
+          <ResponsiveContainer>
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} domain={[0,100]} />
+              <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }} />
+              <Bar dataKey="peratus" name="Purata Pencapaian (%)" fill="#059669" radius={[6, 6, 0, 0]} maxBarSize={50} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const StatCard = ({ title, value, sub, color }) => (
+  <div className={`p-4 rounded-2xl ${color}`}>
+    <p className="text-xs font-bold opacity-70 mb-1">{title}</p>
+    <p className="text-2xl md:text-3xl font-extrabold tracking-tight leading-none mb-2">{value}</p>
+    <p className="text-[11px] font-semibold opacity-60 uppercase tracking-wide">{sub}</p>
+  </div>
+);
+
+
+/* =========================================================================
+   TAB 2: KEMASUKAN DATA (UI Dioptimumkan untuk Mobile)
+   ========================================================================= */
+function TabEntry({ appData, updateData }) {
+  const { students, records, config } = appData;
+  const [filterGuru, setFilterGuru] = useState("");
+  const [filterKelas, setFilterKelas] = useState("");
+  const [carian, setCarian] = useState("");
+
+  const guruList = useMemo(() => Array.from(new Set(students.map(s => s.guru).filter(Boolean))).sort(), [students]);
+
+  const kelasList = useMemo(() => {
+    const senarai = filterGuru ? students.filter(s => s.guru === filterGuru) : students;
+    return Array.from(new Set(senarai.map(s => s.kelas).filter(Boolean))).sort();
+  }, [students, filterGuru]);
+  
+  useEffect(() => {
+    // Automatik pilih kelas pertama jika guru bertukar atau senarai kelas berubah
+    if (kelasList.length > 0 && !kelasList.includes(filterKelas)) {
+      setFilterKelas(kelasList[0]);
+    } else if (kelasList.length === 0) {
+      setFilterKelas("");
+    }
+  }, [kelasList, filterGuru]);
+
+  const pelajarDitapis = useMemo(() => {
+    return students
+      .filter(s => 
+        (!filterGuru || s.guru === filterGuru) &&
+        (!filterKelas || s.kelas === filterKelas) && 
+        (!carian || s.nama.toLowerCase().includes(carian.toLowerCase()))
+      )
+      .sort((a,b) => a.nama.localeCompare(b.nama));
+  }, [students, filterGuru, filterKelas, carian]);
+
+  const handleSimpanMs = (id, val) => {
+    updateData(prev => {
+      const ms = val === "" ? undefined : parseInt(val, 10);
+      const nextRecords = { ...prev.records };
+      const rekodBulan = { ...(nextRecords[config.currentMonth] || {}) };
+      
+      if (ms === undefined) delete rekodBulan[id];
+      else rekodBulan[id] = Math.max(0, ms);
+      
+      nextRecords[config.currentMonth] = rekodBulan;
+      return { ...prev, records: nextRecords };
+    });
+  };
+
+  if (students.length === 0) return <KadKosong pesan="Tiada pelajar. Sila daftar pelajar." icon={Users} />;
+
+  const rekodBulanIni = records[config.currentMonth] || {};
+  const siapDiisi = pelajarDitapis.filter(s => rekodBulanIni[s.id] !== undefined).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Kawalan Carian, Guru & Kelas */}
+      <Card padding={false} className="p-3 bg-white sticky top-20 md:top-0 z-30 flex flex-col md:flex-row gap-3 shadow-sm">
+        <select value={filterGuru} onChange={e => setFilterGuru(e.target.value)} className="w-full md:w-48 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-bold rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer">
+          <option value="">Semua Guru</option>
+          {guruList.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={filterKelas} onChange={e => setFilterKelas(e.target.value)} className="w-full md:w-48 bg-gray-50 border border-gray-200 text-gray-800 text-sm font-bold rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer">
+          <option value="">Semua Kelas</option>
+          {kelasList.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Cari nama pelajar..." value={carian} onChange={e => setCarian(e.target.value)} className="w-full bg-gray-50 border border-gray-200 text-sm font-medium rounded-xl pl-10 pr-4 py-3 focus:ring-2 focus:ring-primary outline-none" />
+        </div>
+      </Card>
+
+      {/* Ringkasan Kelas */}
+      <div className="flex justify-between items-center px-2">
+        <span className="text-sm font-bold text-gray-600">Pelajar: {pelajarDitapis.length}</span>
+        <span className={`text-xs font-bold px-3 py-1 rounded-full ${siapDiisi === pelajarDitapis.length && pelajarDitapis.length > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+          Diisi: {siapDiisi} / {pelajarDitapis.length}
+        </span>
+      </div>
+
+      {/* Senarai Kad Pelajar (Mobile Friendly) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {pelajarDitapis.map((s, i) => {
+          const ms = rekodBulanIni[s.id] ?? "";
+          const st = ms !== "" ? kiraStatusPelajar(s.tingkatan, ms) : null;
+          
+          return (
+            <div key={s.id} className={`p-4 rounded-2xl border transition-colors ${st?.selesai ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'} flex items-center justify-between gap-3`}>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-gray-400 mb-0.5">{i+1}. T{s.tingkatan}</div>
+                <div className="font-bold text-sm text-gray-800 truncate leading-tight">{s.nama}</div>
+                <div className="text-xs font-semibold mt-1">
+                  {st ? (
+                    st.selesai ? <span className="text-emerald-600">Selesai sasaran</span> :
+                    <span className="text-amber-600">Baki: {st.baki} ms ({st.pencapaian}%)</span>
+                  ) : <span className="text-gray-400">Belum diisi</span>}
+                </div>
+              </div>
+              <div className="flex flex-col items-center shrink-0">
+                <label className="text-[10px] font-bold text-gray-500 mb-1 uppercase">M/Surat</label>
+                <input 
+                  type="number" min="0" value={ms} 
+                  onChange={e => handleSimpanMs(s.id, e.target.value)}
+                  placeholder="-"
+                  className={`w-16 h-12 text-center text-lg font-bold rounded-xl border-2 outline-none focus:border-primary focus:ring-4 ring-primary/20 transition-all ${st?.selesai ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-gray-50 border-gray-200'}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+        {pelajarDitapis.length === 0 && <div className="col-span-full py-10 text-center text-sm font-medium text-gray-400">Tiada pelajar dijumpai.</div>}
+      </div>
+    </div>
+  );
+}
+
+
+/* =========================================================================
+   TAB 3: PENGURUSAN PELAJAR & TETAPAN (Ringkas & Efektif)
+   ========================================================================= */
+function TabManage({ appData, updateData }) {
+  const { students, config } = appData;
+  const [showTambah, setShowTambah] = useState(false);
+
+  // Form Tambah
+  const [nNama, setNNama] = useState("");
+  const [nTingkatan, setNTingkatan] = useState("1");
+  const [nKelas, setNKelas] = useState("");
+  const [nGuru, setNGuru] = useState("");
+
+  const tambahPelajar = (e) => {
+    e.preventDefault();
+    if (!nNama.trim() || !nKelas.trim()) return alert("Sila isi nama dan kelas");
+    
+    const newStudent = {
+      id: "S" + Date.now(),
+      nama: nNama.trim(),
+      tingkatan: parseInt(nTingkatan),
+      kelas: nKelas.trim(),
+      guru: nGuru.trim() || "(Tiada Guru)"
+    };
+    
+    updateData(prev => ({ ...prev, students: [...prev.students, newStudent] }));
+    setNNama("");
+    setShowTambah(false);
+  };
+
+  const padamPelajar = (id) => {
+    if (!confirm("Padam pelajar ini? Data rekodnya juga akan hilang (jika ada).")) return;
+    updateData(prev => {
+      const nextRecords = { ...prev.records };
+      for (let bln in nextRecords) { delete nextRecords[bln][id]; }
+      return { ...prev, students: prev.students.filter(s => s.id !== id), records: nextRecords };
+    });
+  };
+
+  // Import Excel Mudah
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws);
+        
+        const newStudents = [];
+        json.forEach((r, i) => {
+          if (r.Nama || r.nama) {
+            newStudents.push({
+              id: "S" + Date.now() + "_" + i,
+              nama: (r.Nama || r.nama).trim(),
+              tingkatan: Math.min(5, Math.max(1, parseInt(r.Tingkatan || r.tingkatan || 1))),
+              kelas: (r.Kelas || r.kelas || `Tingkatan ${r.Tingkatan}`).trim(),
+              guru: (r.Guru || r.guru || "").trim()
+            });
+          }
+        });
+
+        if (newStudents.length > 0) {
+          updateData(prev => ({ ...prev, students: [...prev.students, ...newStudents] }));
+          alert(`Berjaya import ${newStudents.length} pelajar.`);
+        } else {
+          alert("Gagal cari lajur 'Nama' dalam Excel.");
+        }
+      } catch (err) { alert("Format fail tidak disokong."); }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = ''; // reset
+  };
+
+  const tukarBulanSistem = (val) => {
+    updateData(prev => ({ ...prev, config: { ...prev.config, currentMonth: val } }));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Tetapan Sistem */}
+      <Card>
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BookOpen size={18} className="text-primary"/> Tetapan Sistem</h3>
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-xs font-bold text-gray-500 mb-1">Bulan Semasa (Aktif)</label>
+            <input type="month" value={config.currentMonth} onChange={e => tukarBulanSistem(e.target.value)} className="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-xl text-sm font-bold outline-none focus:border-primary" />
+          </div>
+          <div className="flex-1">
+             <label className="block text-xs font-bold text-gray-500 mb-1">Import Data Pelajar (Excel)</label>
+             <label className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 p-2.5 rounded-xl cursor-pointer font-bold text-sm transition-colors border border-gray-200">
+               <Upload size={16} /> Pilih Fail Excel...
+               <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+             </label>
+             <p className="text-[10px] text-gray-400 mt-1">Lajur diperlukan: Nama, Tingkatan, Kelas, Guru</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Senarai Pelajar */}
+      <Card padding={false} className="overflow-hidden">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <h3 className="font-bold text-gray-800">Senarai Pelajar ({students.length})</h3>
+          <Button icon={Plus} size="sm" onClick={() => setShowTambah(!showTambah)}>Tambah</Button>
+        </div>
+
+        {showTambah && (
+          <form onSubmit={tambahPelajar} className="p-4 bg-emerald-50 border-b border-emerald-100 flex flex-col md:flex-row gap-3">
+            <input required placeholder="Nama penuh..." value={nNama} onChange={e=>setNNama(e.target.value)} className="flex-2 p-2 rounded-lg text-sm border border-emerald-200" />
+            <select value={nTingkatan} onChange={e=>setNTingkatan(e.target.value)} className="flex-1 p-2 rounded-lg text-sm border border-emerald-200">
+              {TINGKATAN.map(t => <option key={t} value={t}>Tingkatan {t}</option>)}
+            </select>
+            <input required placeholder="Kelas (cth: 1 Amanah)" value={nKelas} onChange={e=>setNKelas(e.target.value)} className="flex-1 p-2 rounded-lg text-sm border border-emerald-200" />
+            <input placeholder="Nama Guru" value={nGuru} onChange={e=>setNGuru(e.target.value)} className="flex-1 p-2 rounded-lg text-sm border border-emerald-200" />
+            <Button type="submit">Simpan</Button>
+          </form>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-white text-xs text-gray-400 uppercase">
+              <tr>
+                <th className="px-4 py-3 font-bold w-10 text-center">Bil</th>
+                <th className="px-4 py-3 font-bold">Nama</th>
+                <th className="px-4 py-3 font-bold text-center">Ting</th>
+                <th className="px-4 py-3 font-bold">Kelas</th>
+                <th className="px-4 py-3 font-bold">Guru</th>
+                <th className="px-4 py-3 font-bold text-center w-20">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {students.map((s, i) => (
+                <tr key={s.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-center text-gray-400 font-medium">{i+1}</td>
+                  <td className="px-4 py-3 font-semibold text-gray-800">{s.nama}</td>
+                  <td className="px-4 py-3 text-center font-bold text-primary">T{s.tingkatan}</td>
+                  <td className="px-4 py-3 text-gray-600">{s.kelas}</td>
+                  <td className="px-4 py-3 text-gray-600">{s.guru}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => padamPelajar(s.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {students.length === 0 && <tr><td colSpan="6" className="px-4 py-8 text-center text-gray-400 font-medium">Belum ada pelajar didaftarkan.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+
+/* =========================================================================
+   TAB 4: LAPORAN (Sedia untuk Cetak/Export)
+   ========================================================================= */
+function TabReport({ appData }) {
+  const { students, records, config } = appData;
+  const rekodBulanIni = records[config.currentMonth] || {};
+
+  const handleCetak = () => window.print();
+
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const headers = [["Bil", "Nama Pelajar", "Tingkatan", "Kelas", "Guru", "Mukasurat Semasa", "Sasaran", "Baki", "Pencapaian (%)", "Status"]];
+    const data = students.map((s, i) => {
+      const ms = rekodBulanIni[s.id];
+      const st = ms !== undefined ? kiraStatusPelajar(s.tingkatan, ms) : null;
+      return [
+        i + 1, s.nama, s.tingkatan, s.kelas, s.guru,
+        st ? st.ms : "Belum diisi", TARGET[s.tingkatan], st ? st.baki : "-", st ? st.pencapaian : "-",
+        st ? (st.selesai ? "Selesai" : "Proses") : "Tiada"
+      ];
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...data]);
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan");
+    XLSX.writeFile(wb, `Laporan_Tahriri_${config.currentMonth}.xlsx`);
+  };
+
+  // Ringkasan Tingkatan (untuk jadual cetakan)
+  const ringkasan = TINGKATAN.map(t => {
+    const l = students.filter(s => s.tingkatan === t);
+    let siap = 0, capai = 0, sum = 0;
+    l.forEach(s => {
+      const ms = rekodBulanIni[s.id];
+      if (ms !== undefined) {
+        siap++;
+        const st = kiraStatusPelajar(t, ms);
+        if(st.selesai) capai++;
+        sum += st.pencapaian;
+      }
+    });
+    return { t, total: l.length, siap, capai, purata: siap ? Math.round(sum/siap) : 0 };
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="no-print flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-800">Jana Laporan</h2>
+          <p className="text-sm font-medium text-gray-500">Laporan rasmi {formatBulan(config.currentMonth)}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" icon={Download} onClick={handleExportExcel} className="hidden md:flex">Excel</Button>
+          <Button icon={Printer} onClick={handleCetak}>Cetak PDF</Button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 print-only:shadow-none print-only:border-0 print-only:p-0">
+        <div className="text-center mb-8 border-b-2 border-gray-800 pb-6">
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Laporan Penulisan Tahriri Al-Quran</h1>
+          <p className="text-gray-600 font-semibold mt-1">Bulan Laporan: {formatBulan(config.currentMonth)}</p>
+        </div>
+
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          {ringkasan.map(r => (
+            <div key={r.t} className="border border-gray-200 p-4 rounded-xl text-center bg-gray-50">
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">Tingkatan {r.t}</div>
+              <div className="text-xl font-black text-gray-900 mt-1">{r.purata}%</div>
+              <div className="text-[10px] font-bold text-gray-500 mt-1">{r.capai} selesai / {r.total} pljr</div>
+            </div>
+          ))}
+        </div>
+
+        <table className="w-full text-sm text-left border-collapse border border-gray-300">
+          <thead>
+            <tr className="bg-gray-100 text-gray-800 font-bold">
+              <th className="border border-gray-300 p-2 text-center w-12">Ting</th>
+              <th className="border border-gray-300 p-2">Sasaran</th>
+              <th className="border border-gray-300 p-2 text-center">Jum. Pelajar</th>
+              <th className="border border-gray-300 p-2 text-center">Telah Diisi</th>
+              <th className="border border-gray-300 p-2 text-center">Selesai</th>
+              <th className="border border-gray-300 p-2 text-center">Purata Capai</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ringkasan.map(r => (
+              <tr key={r.t}>
+                <td className="border border-gray-300 p-2 text-center font-bold">T{r.t}</td>
+                <td className="border border-gray-300 p-2 font-medium">Ms {TARGET[r.t]}</td>
+                <td className="border border-gray-300 p-2 text-center">{r.total}</td>
+                <td className="border border-gray-300 p-2 text-center">{r.siap}</td>
+                <td className="border border-gray-300 p-2 text-center font-bold">{r.capai}</td>
+                <td className="border border-gray-300 p-2 text-center font-bold text-primary">{r.purata}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="mt-12 pt-6 border-t border-gray-200 text-xs text-center text-gray-500 font-medium">
+          Laporan dijana secara automatik oleh Sistem Rekod Tahriri Al-Quran pada {new Date().toLocaleDateString('ms-MY')}.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Komponen Helper
+const KadKosong = ({ pesan, icon: Icon }) => (
+  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-gray-100 shadow-sm mt-4">
+    <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 mb-4">
+      <Icon size={32} />
+    </div>
+    <p className="text-gray-500 font-medium">{pesan}</p>
+  </div>
+);
+
+// Init React
+createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
