@@ -237,67 +237,98 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen pb-24 md:pb-10 max-w-5xl mx-auto md:p-6">
-      {/* HEADER KHAS (Tunjuk status sinkronisasi) */}
-      <header className="bg-white md:rounded-2xl shadow-sm border-b md:border border-gray-100 p-4 sticky top-0 z-40 flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md">
+    <div className="flex h-screen bg-gray-50 overflow-hidden text-gray-800 font-sans">
+      
+      {/* DESKTOP SIDEBAR (MENU KIRI) */}
+      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 z-30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+        <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-md shadow-primary/20">
             <BookOpen size={20} />
           </div>
           <div>
-            <h1 className="font-bold text-gray-800 leading-tight">Rekod Tahriri</h1>
-            <p className="text-xs text-gray-500 font-medium">Al-Quran (Sistem Web)</p>
+            <h1 className="font-extrabold text-gray-800 leading-tight text-lg">Rekod Tahriri</h1>
+            <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Al-Quran Web</p>
           </div>
         </div>
         
-        {/* Status Cloud */}
-        <div className="flex items-center gap-2">
-          {syncStatus === "saving" && <span className="flex items-center gap-1 text-xs font-bold text-amber-500 bg-amber-50 px-2 py-1 rounded-full"><RefreshCcw size={12} className="animate-spin" /> Menyimpan</span>}
-          {syncStatus === "saved" && <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full"><Cloud size={14} /> Tersimpan</span>}
-          {syncStatus === "unsaved" && <span className="flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-full"><CloudUpload size={14} /> Tertunda</span>}
-          {syncStatus === "error" && <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full"><CloudOff size={14} /> Ralat</span>}
-          <button onClick={() => fetchData(false)} title="Muat Semula Data" className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-600 ml-1">
-            <RefreshCcw size={16} />
-          </button>
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 px-2">Menu Utama</div>
+          {TABS.map(t => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <button key={t.id} onClick={() => setActiveTab(t.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${active ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}>
+                <Icon size={18} strokeWidth={active ? 2.5 : 2} /> {t.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Status Cloud di Sidebar Bawah */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-2">
+              <span className="text-xs font-bold text-gray-500">Status Server</span>
+              <button onClick={() => fetchData(false)} title="Muat Semula" className="p-1.5 bg-white rounded-md shadow-sm text-gray-400 hover:text-primary transition-colors border border-gray-100">
+                <RefreshCcw size={12} className={syncStatus === "loading" ? "animate-spin" : ""} />
+              </button>
+            </div>
+            {syncStatus === "saving" && <span className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-100 p-2 rounded-lg w-full"><RefreshCcw size={14} className="animate-spin" /> Menyimpan...</span>}
+            {syncStatus === "saved" && <span className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 p-2 rounded-lg w-full"><Cloud size={14} /> Tersimpan</span>}
+            {syncStatus === "unsaved" && <span className="flex items-center justify-center gap-1.5 text-xs font-bold text-gray-600 bg-white border border-gray-200 shadow-sm p-2 rounded-lg w-full"><CloudUpload size={14} /> Menunggu...</span>}
+            {syncStatus === "error" && <span className="flex items-center justify-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 border border-red-100 p-2 rounded-lg w-full"><CloudOff size={14} /> Ralat Talian</span>}
+          </div>
         </div>
-      </header>
+      </aside>
 
-      {/* KANDUNGAN TAB */}
-      <main className="px-4 md:px-0">
-        {activeTab === "dash" && <TabDashboard appData={appData} />}
-        {activeTab === "entry" && <TabEntry appData={appData} updateData={updateData} />}
-        {activeTab === "manage" && <TabManage appData={appData} updateData={updateData} />}
-        {activeTab === "report" && <TabReport appData={appData} />}
-      </main>
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        
+        {/* MOBILE HEADER (Hanya nampak di telefon) */}
+        <header className="md:hidden bg-white shadow-sm border-b border-gray-100 p-4 flex items-center justify-between z-20 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-md">
+              <BookOpen size={16} />
+            </div>
+            <div>
+              <h1 className="font-bold text-gray-800 text-sm leading-tight">Rekod Tahriri</h1>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {syncStatus === "saving" && <span className="text-amber-500 bg-amber-50 p-1.5 rounded-md"><RefreshCcw size={14} className="animate-spin" /></span>}
+            {syncStatus === "saved" && <span className="text-emerald-600 bg-emerald-50 p-1.5 rounded-md"><Cloud size={14} /></span>}
+            {syncStatus === "unsaved" && <span className="text-gray-500 bg-gray-100 p-1.5 rounded-md"><CloudUpload size={14} /></span>}
+            {syncStatus === "error" && <span className="text-red-600 bg-red-50 p-1.5 rounded-md"><CloudOff size={14} /></span>}
+          </div>
+        </header>
 
-      {/* MOBILE BOTTOM NAV */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-2 pb-safe z-50 shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]">
-        {TABS.map(t => {
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex flex-col items-center gap-1 p-2 w-full rounded-xl transition-colors ${activeTab === t.id ? 'text-primary' : 'text-gray-400 hover:text-gray-600'}`}>
-              <Icon size={22} strokeWidth={activeTab === t.id ? 2.5 : 2} />
-              <span className="text-[10px] font-bold">{t.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+        {/* TAB CONTENT CONTAINER */}
+        <main className="flex-1 overflow-y-auto w-full relative bg-gray-50">
+          <div className="max-w-5xl mx-auto p-4 md:p-8 pb-24 md:pb-12">
+            {activeTab === "dash" && <TabDashboard appData={appData} />}
+            {activeTab === "entry" && <TabEntry appData={appData} updateData={updateData} />}
+            {activeTab === "manage" && <TabManage appData={appData} updateData={updateData} />}
+            {activeTab === "report" && <TabReport appData={appData} />}
+          </div>
+        </main>
 
-      {/* DESKTOP NAV (Terapung di sisi atas) */}
-      <nav className="hidden md:flex justify-center gap-2 mb-6">
-        {TABS.map(t => {
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === t.id ? 'bg-gray-900 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300 hover:text-gray-800'}`}>
-              <Icon size={18} /> {t.label}
-            </button>
-          );
-        })}
-      </nav>
+        {/* MOBILE BOTTOM NAV */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-2 pb-safe z-50 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)]">
+          {TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex flex-col items-center justify-center gap-1 p-2 w-full rounded-xl transition-all ${activeTab === t.id ? 'text-primary' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}>
+                <Icon size={20} strokeWidth={activeTab === t.id ? 2.5 : 2} className={activeTab === t.id ? 'mb-0.5' : ''} />
+                <span className={`text-[10px] ${activeTab === t.id ? 'font-extrabold' : 'font-semibold'}`}>{t.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
     </div>
   );
 }
-
 
 /* =========================================================================
    TAB 1: DASHBOARD UTAMA
@@ -714,6 +745,26 @@ function TabReport({ appData }) {
     return { t, total: l.length, siap, capai, purata: siap ? Math.round(sum/siap) : 0 };
   });
 
+  // KIRAAN STATUS GURU BELUM LENGKAP
+  const statusGuru = useMemo(() => {
+    const stats = {};
+    students.forEach(s => {
+      const g = s.guru || "(Tiada Guru)";
+      if (!stats[g]) stats[g] = { total: 0, diisi: 0, kelas: new Set() };
+      stats[g].total++;
+      stats[g].kelas.add(s.kelas);
+      if (rekodBulanIni[s.id] !== undefined) stats[g].diisi++;
+    });
+    
+    return Object.entries(stats).map(([guru, data]) => ({
+      guru,
+      total: data.total,
+      diisi: data.diisi,
+      kelas: Array.from(data.kelas).join(', '),
+      status: data.diisi === 0 ? 'Belum Mula' : (data.diisi < data.total ? 'Belum Lengkap' : 'Selesai')
+    })).filter(t => t.diisi < t.total).sort((a,b) => a.diisi - b.diisi); // Hanya ambil yang belum lengkap sahaja
+  }, [students, rekodBulanIni]);
+
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
@@ -773,6 +824,38 @@ function TabReport({ appData }) {
             ))}
           </tbody>
         </table>
+
+        {/* SENARAI GURU BELUM LENGKAP (Akan dipaparkan & dicetak) */}
+        <div className="mt-12 pt-6 border-t-2 border-gray-800 print-break-avoid">
+          <h3 className="text-lg font-bold text-gray-900 mb-4 uppercase tracking-tight flex items-center gap-2">
+            <AlertCircle size={20} className="text-amber-500 no-print" />
+            Status Guru Belum Lengkap ({formatBulan(bulanSemasa)})
+          </h3>
+          
+          {statusGuru.length === 0 ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3 text-emerald-700 print-only:border-0 print-only:p-0">
+              <CheckCircle2 size={20} className="no-print" />
+              <p className="text-sm font-bold">Alhamdulillah! Semua guru telah melengkapkan data bagi bulan ini.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 print-only:grid-cols-3">
+              {statusGuru.map((g, i) => (
+                <div key={i} className="border border-gray-300 rounded-xl p-3 bg-white print-only:border-gray-400">
+                  <div className="font-bold text-gray-800 text-sm truncate" title={g.guru}>{g.guru}</div>
+                  <div className="text-[10px] text-gray-500 font-bold uppercase mt-1 mb-2 truncate" title={g.kelas}>Kelas: {g.kelas}</div>
+                  <div className="flex justify-between items-center border-t border-gray-100 pt-2 print-only:border-gray-200">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${g.diisi === 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {g.status}
+                    </span>
+                    <span className="text-[11px] font-bold text-gray-600">
+                      Diisi: <span className={g.diisi === 0 ? 'text-red-600' : 'text-amber-600'}>{g.diisi}</span>/{g.total}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="mt-12 pt-6 border-t border-gray-200 text-xs text-center text-gray-500 font-medium">
           Laporan dijana secara automatik oleh Sistem Rekod Tahriri Al-Quran pada {new Date().toLocaleDateString('ms-MY')}.
